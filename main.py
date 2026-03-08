@@ -76,7 +76,7 @@ class DiseasePrediction:
     # Features Correlation
     def _feature_correlation(self, data_frame=None, show_fig=False):
         # Get Feature Correlation
-        corr = data_frame.corr()
+        corr = data_frame.drop(columns=["prognosis"]).corr()
         sn.heatmap(corr, square=True, annot=False, cmap="YlGnBu")
         plt.title("Feature Correlation")
         plt.tight_layout()
@@ -158,13 +158,24 @@ class DiseasePrediction:
 
 
 if __name__ == "__main__":
-    # Model Currently Training
-    current_model_name = 'decision_tree'
-    # Instantiate the Class
-    dp = DiseasePrediction(model_name=current_model_name)
-    # Train the Model
-    dp.train_model()
-    # Get Model Performance on Test Data
-    test_accuracy, classification_report = dp.make_prediction(saved_model_name=current_model_name)
-    print("Model Test Accuracy: ", test_accuracy)
-    print("Test Data Classification Report: \n", classification_report)
+
+    # List of models to train
+    models = ['decision_tree', 'random_forest', 'gradient_boost', 'mnb']
+
+    # Loop through each model
+    for model_name in models:
+
+        print(f"\nTraining model: {model_name}")
+
+        # Create model object
+        dp = DiseasePrediction(model_name=model_name)
+
+        # Train the model
+        dp.train_model()
+
+        # Test the model
+        test_accuracy, clf_report = dp.make_prediction(saved_model_name=model_name)
+
+        # Print results
+        print("Model Test Accuracy:", test_accuracy)
+        print("Classification Report:\n", clf_report)
