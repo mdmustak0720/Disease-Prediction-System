@@ -60,13 +60,3 @@ pip install -r requirements.txt
 ```
 
 
-```
-
-## Standalone Demo
-
-For running the inference on test set or on custom inputs, you can also use the `infr.py` file as follows:
-
-```
-python infer.py
-```
-

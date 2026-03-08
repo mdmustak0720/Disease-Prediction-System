@@ -3,7 +3,8 @@ import yaml
 from joblib import dump, load
 import pandas as pd
 from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, f1_score
+import numpy as np
 # Naive Bayes Approach
 from sklearn.naive_bayes import MultinomialNB
 # Trees Approach
@@ -91,8 +92,10 @@ class DiseasePrediction:
                                                           random_state=self.config['random_state'])
 
         if self.verbose:
-            print("Number of Training Features: {0}\tNumber of Training Labels: {1}".format(len(X_train), len(y_train)))
-            print("Number of Validation Features: {0}\tNumber of Validation Labels: {1}".format(len(X_val), len(y_val)))
+            print("Number of Training Features: {0}\tNumber of Training Labels: {1}".format(
+                len(X_train), len(y_train)))
+            print("Number of Validation Features: {0}\tNumber of Validation Labels: {1}".format(
+                len(X_val), len(y_val)))
         return X_train, y_train, X_val, y_val
 
     # Model Selection
@@ -100,9 +103,11 @@ class DiseasePrediction:
         if self.model_name == 'mnb':
             self.clf = MultinomialNB()
         elif self.model_name == 'decision_tree':
-            self.clf = DecisionTreeClassifier(criterion=self.config['model']['decision_tree']['criterion'])
+            self.clf = DecisionTreeClassifier(
+                criterion=self.config['model']['decision_tree']['criterion'])
         elif self.model_name == 'random_forest':
-            self.clf = RandomForestClassifier(n_estimators=self.config['model']['random_forest']['n_estimators'])
+            self.clf = RandomForestClassifier(
+                n_estimators=self.config['model']['random_forest']['n_estimators'])
         elif self.model_name == 'gradient_boost':
             self.clf = GradientBoostingClassifier(n_estimators=self.config['model']['gradient_boost']['n_estimators'],
                                                   criterion=self.config['model']['gradient_boost']['criterion'])
@@ -143,18 +148,84 @@ class DiseasePrediction:
     def make_prediction(self, saved_model_name=None, test_data=None):
         try:
             # Load Trained Model
-            clf = load(str(self.model_save_path + saved_model_name + ".joblib"))
+            clf = load(str(self.model_save_path +
+                       saved_model_name + ".joblib"))
         except Exception as e:
             print("Model not found...")
+            return None
 
         if test_data is not None:
             result = clf.predict(test_data)
             return result
         else:
             result = clf.predict(self.test_features)
-        accuracy = accuracy_score(self.test_labels, result)
-        clf_report = classification_report(self.test_labels, result)
-        return accuracy, clf_report
+
+        # Use new accuracy calculation method
+        accuracy_report = self.calculate_disease_accuracy(
+            self.test_labels, result)
+
+        # Visualize confusion matrix
+        self._visualize_confusion_matrix(
+            self.test_labels, result, saved_model_name)
+
+        return accuracy_report
+
+    def calculate_disease_accuracy(self, y_true, y_pred, disease_names=None):
+        """Calculate per-disease accuracy and overall metrics"""
+
+        # Overall accuracy
+        overall_accuracy = accuracy_score(y_true, y_pred)
+
+        # Classification report with weighted averages
+        report = classification_report(y_true, y_pred, output_dict=True)
+
+        # Per-disease accuracy
+        unique_diseases = np.unique(y_true)
+        per_disease_accuracy = {}
+
+        for disease in unique_diseases:
+            mask = y_true == disease
+            if mask.sum() > 0:
+                disease_accuracy = accuracy_score(y_true[mask], y_pred[mask])
+                per_disease_accuracy[disease] = disease_accuracy
+
+        # Weighted and Macro F1 scores (better for multi-class)
+        weighted_f1 = report['weighted avg']['f1-score']
+        macro_f1 = report['macro avg']['f1-score']
+
+        if self.verbose:
+            print(f"\n{'='*60}")
+            print(f"DISEASE PREDICTION ACCURACY ANALYSIS")
+            print(f"{'='*60}")
+            print(f"\nOverall Test Accuracy: {overall_accuracy:.4f}")
+            print(f"Weighted F1-Score: {weighted_f1:.4f}")
+            print(f"Macro F1-Score (avg per disease): {macro_f1:.4f}")
+            print(f"\nPer-Disease Accuracy:")
+            for disease, acc in sorted(per_disease_accuracy.items(), key=lambda x: x[1]):
+                print(f"  {disease}: {acc:.4f}")
+            print(f"{'='*60}\n")
+
+        return {
+            'overall_accuracy': overall_accuracy,
+            'weighted_f1': weighted_f1,
+            'macro_f1': macro_f1,
+            'per_disease_accuracy': per_disease_accuracy,
+            'report': report
+        }
+
+    def _visualize_confusion_matrix(self, y_true, y_pred, model_name):
+        """Visualize confusion matrix for disease predictions"""
+        conf_mat = confusion_matrix(y_true, y_pred)
+        plt.figure(figsize=(12, 10))
+        sn.heatmap(conf_mat, annot=True, fmt='d', cmap='Blues',
+                   xticklabels=np.unique(y_true),
+                   yticklabels=np.unique(y_true))
+        plt.title(f'Confusion Matrix - {model_name}')
+        plt.xlabel('Predicted Disease')
+        plt.ylabel('True Disease')
+        plt.tight_layout()
+        plt.savefig(f'confusion_matrix_{model_name}.png')
+        plt.close()
 
 
 if __name__ == "__main__":
@@ -174,8 +245,13 @@ if __name__ == "__main__":
         dp.train_model()
 
         # Test the model
-        test_accuracy, clf_report = dp.make_prediction(saved_model_name=model_name)
+        accuracy_report = dp.make_prediction(saved_model_name=model_name)
 
         # Print results
-        print("Model Test Accuracy:", test_accuracy)
-        print("Classification Report:\n", clf_report)
+        if accuracy_report:
+            print(f"\nModel: {model_name}")
+            print(
+                f"Overall Accuracy: {accuracy_report['overall_accuracy']:.4f}")
+            print(f"Weighted F1-Score: {accuracy_report['weighted_f1']:.4f}")
+            print(
+                f"Per-Disease Accuracy: {accuracy_report['per_disease_accuracy']}")
